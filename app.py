@@ -204,18 +204,34 @@ def main():
                     else:
                         response = "Please specify the Project ID (e.g., PRJ001)."
 
-                # Intent: Update Status
-                elif "status" in prompt.lower() or "leave" in prompt.lower():
-                    # Heuristic: Look for P00X and Status keyword
+# Intent: Update Status (Pilot OR Drone)
+                elif "status" in prompt.lower() or "leave" in prompt.lower() or "maintenance" in prompt.lower():
                     words = prompt.split()
-                    pilot_id = next((w for w in words if w.startswith("P00")), None)
-                    if pilot_id and "leave" in prompt.lower():
-                        res = agent.update_pilot_status(pilot_id, "On Leave", pilots_ws)
-                        if res is True:
-                            response = f"✅ Updated {pilot_id} status to 'On Leave'. Syncing to Google Sheets..."
-                            st.cache_data.clear() # Force reload on next run
-                        else:
-                            response = f"❌ Failed to update: {res}"
+                    
+                    # Check if it's a Pilot (P00X)
+                    pilot_id = next((w for w in words if w.startswith("P0")), None)
+                    # Check if it's a Drone (D00X)
+                    drone_id = next((w for w in words if w.startswith("D0")), None)
+                    
+                    if pilot_id:
+                        status = "On Leave" if "leave" in prompt.lower() else "Available"
+                        res = agent.update_pilot_status(pilot_id, status, pilots_ws)
+                        response = f"✅ Updated Pilot {pilot_id} to '{status}'." if res is True else f"❌ Error: {res}"
+                        st.cache_data.clear()
+                    
+                    elif drone_id:
+                        status = "Maintenance" if "maintenance" in prompt.lower() else "Available"
+                        # Re-using the logic for drones (assuming similar structure)
+                        try:
+                            cell = drones_ws.find(drone_id)
+                            # Assuming status is col 4 (D) for drones based on CSV structure
+                            drones_ws.update_cell(cell.row, 4, status) 
+                            response = f"✅ Updated Drone {drone_id} to '{status}'."
+                            st.cache_data.clear()
+                        except Exception as e:
+                            response = f"❌ Error updating drone: {e}"
+                    else:
+                        response = "Please specify the ID (e.g., P001 or D001) to update status."
                 
                 # Intent: General Status
                 elif "available" in prompt.lower():
@@ -256,3 +272,4 @@ def main():
 if __name__ == "__main__":
 
     main()
+
