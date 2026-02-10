@@ -278,24 +278,51 @@ def parse_intent(user_input):
     """Enhanced intent classifier with assignment support"""
     user_input_lower = user_input.lower()
     
+    # Priority-based intent matching (order matters!)
     intents = {
         "assign": ["assign", "assignment", "allocate", "give"],
-        "find_info": ["find", "show", "get", "details", "info", "where is", "who is"],
+        "show_roster": ["show all drones", "list all drones", "show all pilots", "list all pilots",
+                        "all drones", "all pilots", "show drones", "list drones", 
+                        "show pilots", "list pilots", "roster"],
+        "show_missions": ["show missions", "list missions", "projects", "show projects", 
+                          "active missions", "all missions"],
+        "show_available": ["show available", "list available", "available", "working", "free", "ready"],
+        "show_non_working": ["not working", "not available", "unavailable", "in maintenance", 
+                             "broken", "down", "out of service", "offline"],
         "recommend": ["recommend", "replacement", "who can", "suggest"],
         "update_status": ["update", "set status", "mark as", "change status"],
         "check_status": ["status of", "check status", "is available"],
-        "show_available": ["available", "working", "free", "ready"],
-        "show_non_working": ["not working", "not available", "unavailable", "in maintenance", 
-                             "broken", "down", "out of service", "offline"],
-        "show_roster": ["show pilots", "list pilots", "roster", "show drones", "list drones"],
-        "show_missions": ["show missions", "list missions", "projects", "show projects", "active missions"]
+        "find_info": ["find", "show", "get", "details", "info", "where is", "who is"]
     }
     
+    # Detect Intent - check most specific patterns first
     detected_intent = None
-    for intent, keywords in intents.items():
-        if any(k in user_input_lower for k in keywords):
-            detected_intent = intent
-            break
+    
+    # Check for specific multi-word patterns first (most specific to least specific)
+    # Priority 1: "not working" phrases (highest priority)
+    if any(k in user_input_lower for k in ["not working", "not available", "broken", "down", "offline", "unavailable"]):
+        detected_intent = "show_non_working"
+    # Priority 2: Assignment
+    elif any(k in user_input_lower for k in ["assign", "assignment", "allocate"]):
+        detected_intent = "assign"
+    # Priority 3: Show available
+    elif any(k in user_input_lower for k in ["show available", "list available"]):
+        detected_intent = "show_available"
+    # Priority 4: Show all/roster
+    elif any(k in user_input_lower for k in ["show all drones", "list all drones", "all drones", "show drones", "list drones"]):
+        detected_intent = "show_roster"
+    elif any(k in user_input_lower for k in ["show all pilots", "list all pilots", "all pilots", "show pilots", "list pilots"]):
+        detected_intent = "show_roster"
+    # Priority 5: Missions
+    elif any(k in user_input_lower for k in ["show missions", "list missions", "active missions", "all missions"]):
+        detected_intent = "show_missions"
+    else:
+        # Fall back to general matching for other intents
+        for intent, keywords in intents.items():
+            if intent not in ["assign", "show_roster", "show_missions", "show_available", "show_non_working"]:
+                if any(k in user_input_lower for k in keywords):
+                    detected_intent = intent
+                    break
     
     # Extract Entity IDs
     words = user_input.replace("?", "").replace(".", "").split()
@@ -636,11 +663,17 @@ def main():
                     # SHOW ROSTER
                     elif intent == "show_roster":
                         if "drone" in clean_text:
-                            response = f"**🚁 All Drones:**\n\n"
-                            response += drones_df[['drone_id', 'model', 'status', 'location']].to_markdown(index=False)
+                            response = f"**🚁 All Drones ({len(drones_df)} total):**\n\n"
+                            response += drones_df[['drone_id', 'model', 'status', 'location', 'flight_hours']].to_markdown(index=False)
+                            response += f"\n\n**Status Summary:**\n"
+                            for status, count in drones_df['status'].value_counts().items():
+                                response += f"- {status}: {count}\n"
                         else:
-                            response = f"**👨‍✈️ All Pilots:**\n\n"
-                            response += pilots_df[['pilot_id', 'name', 'status', 'location']].to_markdown(index=False)
+                            response = f"**👨‍✈️ All Pilots ({len(pilots_df)} total):**\n\n"
+                            response += pilots_df[['pilot_id', 'name', 'status', 'location', 'skills']].to_markdown(index=False)
+                            response += f"\n\n**Status Summary:**\n"
+                            for status, count in pilots_df['status'].value_counts().items():
+                                response += f"- {status}: {count}\n"
                     
                     else:
                         response = "I can help you with:\n"
