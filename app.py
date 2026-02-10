@@ -172,6 +172,7 @@ def main():
     st.title("🔒 Skylark Private Ops Agent")
     st.caption("Privacy Mode: On. Data processed locally.")
     
+    # Sidebar
     st.sidebar.header("System Status")
     client = init_connection()
     
@@ -181,6 +182,7 @@ def main():
             st.cache_data.clear()
             st.rerun()
     
+    # Load Data
     pilots_df, drones_df, missions_df, pilots_ws, drones_ws = load_data(client)
     
     if pilots_df is not None:
@@ -189,7 +191,7 @@ def main():
         tab1, tab2, tab3 = st.tabs(["💬 Ops Console", "📊 Roster & Fleet", "⚠️ Conflicts"])
         
         with tab1:
-            st.info("System Ready. I can help with Roster, Assignments, and Status updates.")
+            st.info("System Ready. Try: 'Find Arjun', 'Status of P001', or 'Find pilot for PRJ001'.")
             
             if "messages" not in st.session_state:
                 st.session_state.messages = []
@@ -198,24 +200,53 @@ def main():
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-            if prompt := st.chat_input("Ex: 'Find pilot for PRJ001' or 'Set P001 to On Leave'"):
+            if prompt := st.chat_input("Ex: 'Find pilot for PRJ001' or 'Where is Arjun?'"):
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 with st.chat_message("user"):
                     st.markdown(prompt)
 
+                # --- 1. PARSE INTENT ---
                 intent, entity_id, clean_text = parse_intent(prompt)
+                
+                # --- 2. SMART NAME LOOKUP (New Feature) ---
+                # If no ID found (like P001), check if a Pilot's NAME was mentioned
+                if not entity_id:
+                    for idx, row in pilots_df.iterrows():
+                        if row['name'].lower() in clean_text.lower():
+                            entity_id = row['pilot_id'] # Found "Arjun" -> Set ID to "P001"
+                            break
+
                 response = "I didn't quite catch that. Try commands like 'Find pilot for PRJ001' or 'Update P001'."
 
+                # --- 3. EXECUTE LOGIC ---
+                
+                # CASE A: FIND / RECOMMEND
                 if intent == "find_pilot":
                     if entity_id:
-                        recs = agent.recommend_replacement(entity_id)
-                        if not recs.empty:
-                            response = f"**Top recommendations for {entity_id}:**\n\n" + recs.to_markdown(index=False)
+                        # CRITICAL FIX: Distinguish between Pilot (Status) and Project (Recommendation)
+                        if entity_id.startswith("P") and not entity_id.startswith("PRJ"):
+                            # User said "Find P001" -> They probably want status, not a replacement
+                            pilot_data = pilots_df[pilots_df['pilot_id'] == entity_id]
+                            if not pilot_data.empty:
+                                row = pilot_data.iloc[0]
+                                response = f"**👨‍✈️ Pilot Status: {row['name']} ({entity_id})**\n" \
+                                           f"- **Location:** {row['location']}\n" \
+                                           f"- **Status:** {row['status']}\n" \
+                                           f"- **Skills:** {row['skills']}"
+                            else:
+                                response = f"❌ Pilot {entity_id} not found in roster."
+                        
                         else:
-                            response = f"❌ Could not find active project **{entity_id}** or no local pilots are available."
+                            # User said "Find PRJ001" -> Run Recommendation Engine
+                            recs = agent.recommend_replacement(entity_id)
+                            if not recs.empty:
+                                response = f"**Top recommendations for {entity_id}:**\n\n" + recs.to_markdown(index=False)
+                            else:
+                                response = f"❌ Could not find active project **{entity_id}** or no local pilots are available."
                     else:
                         response = "Which project? Please mention the Project ID (e.g., PRJ001)."
 
+                # CASE B: UPDATE STATUS
                 elif intent == "update_status":
                     if entity_id:
                         new_status = "Available"
@@ -227,9 +258,10 @@ def main():
                             res = agent.update_pilot_status(entity_id, new_status, pilots_ws)
                             target = "Pilot"
                         else:
+                            # Drone Update Logic
                             try:
                                 cell = drones_ws.find(entity_id)
-                                drones_ws.update_cell(cell.row, 4, new_status)
+                                drones_ws.update_cell(cell.row, 4, new_status) # Col 4 = Status
                                 res = True
                                 target = "Drone"
                             except Exception as e:
@@ -243,14 +275,37 @@ def main():
                     else:
                         response = "I need an ID to update. (e.g., 'Update P001')"
 
+                # CASE C: CHECK STATUS (Catch-all for names/IDs)
+                elif intent == "check_status" or (entity_id and entity_id.startswith("P")):
+                    if entity_id:
+                        pilot_data = pilots_df[pilots_df['pilot_id'] == entity_id]
+                        if not pilot_data.empty:
+                            row = pilot_data.iloc[0]
+                            response = f"**📍 Status Report: {row['name']} ({entity_id})**\n" \
+                                       f"Status: **{row['status']}** | Location: {row['location']}"
+                        else:
+                            # Try finding drone
+                            drone_data = drones_df[drones_df['drone_id'] == entity_id]
+                            if not drone_data.empty:
+                                row = drone_data.iloc[0]
+                                response = f"**🚁 Drone Status: {row['model']} ({entity_id})**\n" \
+                                           f"Status: **{row['status']}** | Location: {row['location']}"
+                            else:
+                                response = f"❌ ID {entity_id} not found."
+                    else:
+                        response = "Who are you looking for? Try 'Status of Arjun' or 'Where is D001?'"
+
                 elif intent == "show_roster" or "available" in clean_text:
                     avail = pilots_df[pilots_df['status'] == 'Available']
                     response = f"**Available Pilots:**\n{avail[['name', 'location', 'skills']].to_markdown(index=False)}"
+
+                # ---------------------------
 
                 with st.chat_message("assistant"):
                     st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
 
+        # (Keep Tab 2 and Tab 3 exactly as they are)
         with tab2:
             col1, col2 = st.columns(2)
             with col1:
@@ -274,5 +329,3 @@ def main():
             else:
                 st.success("No active conflicts detected.")
 
-if __name__ == "__main__":
-    main()
