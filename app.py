@@ -156,7 +156,9 @@ class OpsAgent:
         )
         
         best_matches = candidates.sort_values(by='score', ascending=False)
-        return best_matches[['name', 'pilot_id', 'skills', 'location', 'score']]
+        # Get available columns
+        available_cols = [col for col in ['name', 'pilot_id', 'skills', 'location', 'score'] if col in best_matches.columns]
+        return best_matches[available_cols]
 
     def get_available_resources(self, resource_type='all'):
         """Get available pilots and/or drones"""
@@ -347,6 +349,11 @@ def parse_intent(user_input):
     return detected_intent, entity_id, entity_type, user_input_lower
 
 
+def get_safe_columns(df, desired_cols):
+    """Helper function to get columns that actually exist in the dataframe"""
+    return [col for col in desired_cols if col in df.columns]
+
+
 def main():
     st.title("🚁 Skylark Conversational Ops Agent")
     st.caption("🤖 AI-Powered Operations Assistant | Privacy Mode: On")
@@ -399,14 +406,22 @@ def main():
                             agent.context.set_awaiting('awaiting_mission_for_pilot_assignment')
                             response = "📋 **Which mission should I assign the pilot to?**\n\nActive missions:\n\n"
                             active = missions_df[missions_df['status'] == 'Active']
-                            response += active[['project_id', 'project_name', 'location', 'required_skills']].to_markdown(index=False)
+                            mission_cols = get_safe_columns(active, ['project_id', 'project_name', 'location', 'required_skills'])
+                            if mission_cols:
+                                response += active[mission_cols].to_markdown(index=False)
+                            else:
+                                response += active.to_markdown(index=False)
                             response += "\n\nPlease tell me the Project ID (e.g., PRJ001)"
                         
                         elif 'drone' in prompt.lower():
                             agent.context.set_awaiting('awaiting_mission_for_drone_assignment')
                             response = "📋 **Which mission should I assign the drone to?**\n\nActive missions:\n\n"
                             active = missions_df[missions_df['status'] == 'Active']
-                            response += active[['project_id', 'project_name', 'location']].to_markdown(index=False)
+                            mission_cols = get_safe_columns(active, ['project_id', 'project_name', 'location'])
+                            if mission_cols:
+                                response += active[mission_cols].to_markdown(index=False)
+                            else:
+                                response += active.to_markdown(index=False)
                             response += "\n\nPlease tell me the Project ID (e.g., PRJ001)"
                         else:
                             response = "I didn't catch that. Are you assigning a **pilot** or a **drone**?"
@@ -456,7 +471,11 @@ def main():
                             available_drones = drones_df[drones_df['status'] == 'Available']
                             if not available_drones.empty:
                                 response = f"✅ **Available drones:**\n\n"
-                                response += available_drones[['drone_id', 'model', 'location', 'flight_hours']].to_markdown(index=False)
+                                drone_cols = get_safe_columns(available_drones, ['drone_id', 'model', 'location', 'flight_hours'])
+                                if drone_cols:
+                                    response += available_drones[drone_cols].to_markdown(index=False)
+                                else:
+                                    response += available_drones.to_markdown(index=False)
                                 response += "\n\n👉 **Which drone would you like to assign?** (Tell me the Drone ID, e.g., D001)"
                             else:
                                 response = "❌ No drones are currently available."
@@ -512,14 +531,22 @@ def main():
                             available = agent.get_available_resources('drone')['drones']
                             if not available.empty:
                                 response = f"✅ **Available Drones ({len(available)} total):**\n\n"
-                                response += available[['drone_id', 'model', 'location', 'flight_hours']].to_markdown(index=False)
+                                drone_cols = get_safe_columns(available, ['drone_id', 'model', 'location', 'flight_hours'])
+                                if drone_cols:
+                                    response += available[drone_cols].to_markdown(index=False)
+                                else:
+                                    response += available.to_markdown(index=False)
                             else:
                                 response = "❌ No drones are currently available."
                         elif "pilot" in clean_text:
                             available = agent.get_available_resources('pilot')['pilots']
                             if not available.empty:
                                 response = f"✅ **Available Pilots ({len(available)} total):**\n\n"
-                                response += available[['pilot_id', 'name', 'location', 'skills']].to_markdown(index=False)
+                                pilot_cols = get_safe_columns(available, ['pilot_id', 'name', 'location', 'skills'])
+                                if pilot_cols:
+                                    response += available[pilot_cols].to_markdown(index=False)
+                                else:
+                                    response += available.to_markdown(index=False)
                             else:
                                 response = "❌ No pilots are currently available."
                         else:
@@ -528,10 +555,18 @@ def main():
                             response = "✅ **Available Resources:**\n\n"
                             response += f"**Pilots ({len(resources['pilots'])} available):**\n"
                             if not resources['pilots'].empty:
-                                response += resources['pilots'][['pilot_id', 'name', 'location']].to_markdown(index=False)
+                                pilot_cols = get_safe_columns(resources['pilots'], ['pilot_id', 'name', 'location'])
+                                if pilot_cols:
+                                    response += resources['pilots'][pilot_cols].to_markdown(index=False)
+                                else:
+                                    response += resources['pilots'].to_markdown(index=False)
                             response += f"\n\n**Drones ({len(resources['drones'])} available):**\n"
                             if not resources['drones'].empty:
-                                response += resources['drones'][['drone_id', 'model', 'location']].to_markdown(index=False)
+                                drone_cols = get_safe_columns(resources['drones'], ['drone_id', 'model', 'location'])
+                                if drone_cols:
+                                    response += resources['drones'][drone_cols].to_markdown(index=False)
+                                else:
+                                    response += resources['drones'].to_markdown(index=False)
                     
                     # SHOW NON-WORKING
                     elif intent == "show_non_working":
@@ -539,20 +574,30 @@ def main():
                             non_working = agent.get_non_working_resources('drone')['drones']
                             if not non_working.empty:
                                 response = f"🔴 **Drones Not Working ({len(non_working)} total):**\n\n"
-                                response += non_working[['drone_id', 'model', 'status', 'location']].to_markdown(index=False)
-                                response += "\n\n**Status Breakdown:**\n"
-                                for status, count in non_working['status'].value_counts().items():
-                                    response += f"- {status}: {count}\n"
+                                drone_cols = get_safe_columns(non_working, ['drone_id', 'model', 'status', 'location'])
+                                if drone_cols:
+                                    response += non_working[drone_cols].to_markdown(index=False)
+                                else:
+                                    response += non_working.to_markdown(index=False)
+                                if 'status' in non_working.columns:
+                                    response += "\n\n**Status Breakdown:**\n"
+                                    for status, count in non_working['status'].value_counts().items():
+                                        response += f"- {status}: {count}\n"
                             else:
                                 response = "✅ All drones are working!"
                         elif "pilot" in clean_text:
                             non_working = agent.get_non_working_resources('pilot')['pilots']
                             if not non_working.empty:
                                 response = f"🔴 **Pilots Not Available ({len(non_working)} total):**\n\n"
-                                response += non_working[['pilot_id', 'name', 'status', 'location']].to_markdown(index=False)
-                                response += "\n\n**Status Breakdown:**\n"
-                                for status, count in non_working['status'].value_counts().items():
-                                    response += f"- {status}: {count}\n"
+                                pilot_cols = get_safe_columns(non_working, ['pilot_id', 'name', 'status', 'location'])
+                                if pilot_cols:
+                                    response += non_working[pilot_cols].to_markdown(index=False)
+                                else:
+                                    response += non_working.to_markdown(index=False)
+                                if 'status' in non_working.columns:
+                                    response += "\n\n**Status Breakdown:**\n"
+                                    for status, count in non_working['status'].value_counts().items():
+                                        response += f"- {status}: {count}\n"
                             else:
                                 response = "✅ All pilots are available!"
                         else:
@@ -561,20 +606,28 @@ def main():
                             response = "🔴 **Not Working / Unavailable:**\n\n"
                             if not resources['pilots'].empty:
                                 response += f"**Pilots ({len(resources['pilots'])}):**\n"
-                                response += resources['pilots'][['pilot_id', 'name', 'status', 'location']].to_markdown(index=False)
+                                pilot_cols = get_safe_columns(resources['pilots'], ['pilot_id', 'name', 'status', 'location'])
+                                if pilot_cols:
+                                    response += resources['pilots'][pilot_cols].to_markdown(index=False)
+                                else:
+                                    response += resources['pilots'].to_markdown(index=False)
                             if not resources['drones'].empty:
                                 response += f"\n\n**Drones ({len(resources['drones'])}):**\n"
-                                response += resources['drones'][['drone_id', 'model', 'status', 'location']].to_markdown(index=False)
+                                drone_cols = get_safe_columns(resources['drones'], ['drone_id', 'model', 'status', 'location'])
+                                if drone_cols:
+                                    response += resources['drones'][drone_cols].to_markdown(index=False)
+                                else:
+                                    response += resources['drones'].to_markdown(index=False)
                     
                     # FIND INFO
                     elif intent == "find_info" or intent == "check_status":
                         if entity_id and entity_type == "pilot":
                             info = agent.get_pilot_info(entity_id)
                             if info:
-                                response = f"**👨‍✈️ Pilot: {info['name']} ({entity_id})**\n\n"
-                                response += f"- **Status:** {info['status']}\n"
-                                response += f"- **Location:** {info['location']}\n"
-                                response += f"- **Skills:** {info['skills']}\n"
+                                response = f"**👨‍✈️ Pilot: {info.get('name', 'N/A')} ({entity_id})**\n\n"
+                                response += f"- **Status:** {info.get('status', 'N/A')}\n"
+                                response += f"- **Location:** {info.get('location', 'N/A')}\n"
+                                response += f"- **Skills:** {info.get('skills', 'N/A')}\n"
                                 response += f"- **Current Assignment:** {info.get('current_assignment', 'None')}\n"
                                 response += f"- **Available From:** {info.get('available_from', 'N/A')}"
                             else:
@@ -583,9 +636,9 @@ def main():
                         elif entity_id and entity_type == "drone":
                             info = agent.get_drone_info(entity_id)
                             if info:
-                                response = f"**🚁 Drone: {info['model']} ({entity_id})**\n\n"
-                                response += f"- **Status:** {info['status']}\n"
-                                response += f"- **Location:** {info['location']}\n"
+                                response = f"**🚁 Drone: {info.get('model', 'N/A')} ({entity_id})**\n\n"
+                                response += f"- **Status:** {info.get('status', 'N/A')}\n"
+                                response += f"- **Location:** {info.get('location', 'N/A')}\n"
                                 response += f"- **Flight Hours:** {info.get('flight_hours', 'N/A')}\n"
                                 response += f"- **Current Assignment:** {info.get('current_assignment', 'None')}\n"
                                 response += f"- **Last Maintenance:** {info.get('last_maintenance', 'N/A')}"
@@ -595,11 +648,11 @@ def main():
                         elif entity_id and entity_type == "mission":
                             info = agent.get_mission_info(entity_id)
                             if info:
-                                response = f"**📋 Mission: {info['project_name']} ({entity_id})**\n\n"
-                                response += f"- **Status:** {info['status']}\n"
-                                response += f"- **Location:** {info['location']}\n"
-                                response += f"- **Start:** {info['start_date']} | **End:** {info['end_date']}\n"
-                                response += f"- **Required Skills:** {info['required_skills']}\n"
+                                response = f"**📋 Mission: {info.get('project_name', 'N/A')} ({entity_id})**\n\n"
+                                response += f"- **Status:** {info.get('status', 'N/A')}\n"
+                                response += f"- **Location:** {info.get('location', 'N/A')}\n"
+                                response += f"- **Start:** {info.get('start_date', 'N/A')} | **End:** {info.get('end_date', 'N/A')}\n"
+                                response += f"- **Required Skills:** {info.get('required_skills', 'N/A')}\n"
                                 response += f"- **Assigned Pilot:** {info.get('assigned_pilot', 'None')}\n"
                                 response += f"- **Assigned Drone:** {info.get('assigned_drone', 'None')}"
                             else:
@@ -658,22 +711,36 @@ def main():
                     elif intent == "show_missions":
                         active = missions_df[missions_df['status'] == 'Active']
                         response = f"**📋 Active Missions ({len(active)} total):**\n\n"
-                        response += active[['project_id', 'project_name', 'location', 'status']].to_markdown(index=False)
+                        mission_cols = get_safe_columns(active, ['project_id', 'project_name', 'location', 'status'])
+                        if mission_cols:
+                            response += active[mission_cols].to_markdown(index=False)
+                        else:
+                            response += active.to_markdown(index=False)
                     
                     # SHOW ROSTER
                     elif intent == "show_roster":
                         if "drone" in clean_text:
                             response = f"**🚁 All Drones ({len(drones_df)} total):**\n\n"
-                            response += drones_df[['drone_id', 'model', 'status', 'location', 'flight_hours']].to_markdown(index=False)
-                            response += f"\n\n**Status Summary:**\n"
-                            for status, count in drones_df['status'].value_counts().items():
-                                response += f"- {status}: {count}\n"
+                            drone_cols = get_safe_columns(drones_df, ['drone_id', 'model', 'status', 'location', 'flight_hours'])
+                            if drone_cols:
+                                response += drones_df[drone_cols].to_markdown(index=False)
+                            else:
+                                response += drones_df.to_markdown(index=False)
+                            if 'status' in drones_df.columns:
+                                response += f"\n\n**Status Summary:**\n"
+                                for status, count in drones_df['status'].value_counts().items():
+                                    response += f"- {status}: {count}\n"
                         else:
                             response = f"**👨‍✈️ All Pilots ({len(pilots_df)} total):**\n\n"
-                            response += pilots_df[['pilot_id', 'name', 'status', 'location', 'skills']].to_markdown(index=False)
-                            response += f"\n\n**Status Summary:**\n"
-                            for status, count in pilots_df['status'].value_counts().items():
-                                response += f"- {status}: {count}\n"
+                            pilot_cols = get_safe_columns(pilots_df, ['pilot_id', 'name', 'status', 'location', 'skills'])
+                            if pilot_cols:
+                                response += pilots_df[pilot_cols].to_markdown(index=False)
+                            else:
+                                response += pilots_df.to_markdown(index=False)
+                            if 'status' in pilots_df.columns:
+                                response += f"\n\n**Status Summary:**\n"
+                                for status, count in pilots_df['status'].value_counts().items():
+                                    response += f"- {status}: {count}\n"
                     
                     else:
                         response = "I can help you with:\n"
