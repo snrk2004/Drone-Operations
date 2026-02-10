@@ -70,7 +70,7 @@ class ConversationContext:
     def is_awaiting(self):
         return st.session_state.context.get('awaiting_response', False)
 
-# --- ENHANCED AGENT LOGIC ---
+# --- ENHANCED AGENT LOGIC WITH CRUD ---
 class OpsAgent:
     def __init__(self, pilots, drones, missions):
         self.pilots = pilots
@@ -156,7 +156,6 @@ class OpsAgent:
         )
         
         best_matches = candidates.sort_values(by='score', ascending=False)
-        # Get available columns
         available_cols = [col for col in ['name', 'pilot_id', 'skills', 'location', 'score'] if col in best_matches.columns]
         return best_matches[available_cols]
 
@@ -197,10 +196,73 @@ class OpsAgent:
             return mission_data.iloc[0].to_dict()
         return None
 
+    # ========== CREATE OPERATIONS ==========
+    
+    def add_pilot(self, pilot_data, worksheet):
+        """Add a new pilot to the database"""
+        try:
+            # Get all current data to find next ID
+            all_pilots = self.pilots
+            if not all_pilots.empty and 'pilot_id' in all_pilots.columns:
+                # Extract numeric part and increment
+                max_num = max([int(p[1:]) for p in all_pilots['pilot_id'] if p.startswith('P')])
+                new_id = f"P{str(max_num + 1).zfill(3)}"
+            else:
+                new_id = "P001"
+            
+            pilot_data['pilot_id'] = new_id
+            
+            # Append to sheet
+            row = [pilot_data.get(col, '') for col in worksheet.row_values(1)]
+            worksheet.append_row(row)
+            
+            return new_id
+        except Exception as e:
+            return str(e)
+    
+    def add_drone(self, drone_data, worksheet):
+        """Add a new drone to the database"""
+        try:
+            all_drones = self.drones
+            if not all_drones.empty and 'drone_id' in all_drones.columns:
+                max_num = max([int(d[1:]) for d in all_drones['drone_id'] if d.startswith('D')])
+                new_id = f"D{str(max_num + 1).zfill(3)}"
+            else:
+                new_id = "D001"
+            
+            drone_data['drone_id'] = new_id
+            
+            row = [drone_data.get(col, '') for col in worksheet.row_values(1)]
+            worksheet.append_row(row)
+            
+            return new_id
+        except Exception as e:
+            return str(e)
+    
+    def add_mission(self, mission_data, worksheet):
+        """Add a new mission to the database"""
+        try:
+            all_missions = self.missions
+            if not all_missions.empty and 'project_id' in all_missions.columns:
+                max_num = max([int(m[3:]) for m in all_missions['project_id'] if m.startswith('PRJ')])
+                new_id = f"PRJ{str(max_num + 1).zfill(3)}"
+            else:
+                new_id = "PRJ001"
+            
+            mission_data['project_id'] = new_id
+            
+            row = [mission_data.get(col, '') for col in worksheet.row_values(1)]
+            worksheet.append_row(row)
+            
+            return new_id
+        except Exception as e:
+            return str(e)
+
+    # ========== UPDATE OPERATIONS ==========
+    
     def assign_pilot_to_mission(self, pilot_id, project_id, pilots_ws, missions_ws):
         """Assign a pilot to a mission"""
         try:
-            # Update pilot's assignment
             pilot_cell = pilots_ws.find(pilot_id)
             headers = pilots_ws.row_values(1)
             
@@ -210,7 +272,6 @@ class OpsAgent:
             pilots_ws.update_cell(pilot_cell.row, assignment_col, project_id)
             pilots_ws.update_cell(pilot_cell.row, status_col, 'Assigned')
             
-            # Update mission's assigned pilot
             mission_cell = missions_ws.find(project_id)
             mission_headers = missions_ws.row_values(1)
             pilot_assignment_col = mission_headers.index('assigned_pilot') + 1
@@ -224,7 +285,6 @@ class OpsAgent:
     def assign_drone_to_mission(self, drone_id, project_id, drones_ws, missions_ws):
         """Assign a drone to a mission"""
         try:
-            # Update drone's assignment
             drone_cell = drones_ws.find(drone_id)
             headers = drones_ws.row_values(1)
             
@@ -234,7 +294,6 @@ class OpsAgent:
             drones_ws.update_cell(drone_cell.row, assignment_col, project_id)
             drones_ws.update_cell(drone_cell.row, status_col, 'Assigned')
             
-            # Update mission's assigned drone
             mission_cell = missions_ws.find(project_id)
             mission_headers = missions_ws.row_values(1)
             drone_assignment_col = mission_headers.index('assigned_drone') + 1
@@ -274,14 +333,78 @@ class OpsAgent:
             return True
         except Exception as e:
             return str(e)
+    
+    def update_pilot_field(self, pilot_id, field_name, new_value, worksheet):
+        """Update any field of a pilot"""
+        try:
+            cell = worksheet.find(pilot_id)
+            headers = worksheet.row_values(1)
+            col_idx = headers.index(field_name) + 1
+            worksheet.update_cell(cell.row, col_idx, new_value)
+            return True
+        except Exception as e:
+            return str(e)
+    
+    def update_drone_field(self, drone_id, field_name, new_value, worksheet):
+        """Update any field of a drone"""
+        try:
+            cell = worksheet.find(drone_id)
+            headers = worksheet.row_values(1)
+            col_idx = headers.index(field_name) + 1
+            worksheet.update_cell(cell.row, col_idx, new_value)
+            return True
+        except Exception as e:
+            return str(e)
+    
+    def update_mission_field(self, project_id, field_name, new_value, worksheet):
+        """Update any field of a mission"""
+        try:
+            cell = worksheet.find(project_id)
+            headers = worksheet.row_values(1)
+            col_idx = headers.index(field_name) + 1
+            worksheet.update_cell(cell.row, col_idx, new_value)
+            return True
+        except Exception as e:
+            return str(e)
+
+    # ========== DELETE OPERATIONS ==========
+    
+    def delete_pilot(self, pilot_id, worksheet):
+        """Delete a pilot from the database"""
+        try:
+            cell = worksheet.find(pilot_id)
+            worksheet.delete_rows(cell.row)
+            return True
+        except Exception as e:
+            return str(e)
+    
+    def delete_drone(self, drone_id, worksheet):
+        """Delete a drone from the database"""
+        try:
+            cell = worksheet.find(drone_id)
+            worksheet.delete_rows(cell.row)
+            return True
+        except Exception as e:
+            return str(e)
+    
+    def delete_mission(self, project_id, worksheet):
+        """Delete a mission from the database"""
+        try:
+            cell = worksheet.find(project_id)
+            worksheet.delete_rows(cell.row)
+            return True
+        except Exception as e:
+            return str(e)
 
 
 def parse_intent(user_input):
-    """Enhanced intent classifier with assignment support"""
+    """Enhanced intent classifier with CRUD support"""
     user_input_lower = user_input.lower()
     
-    # Priority-based intent matching (order matters!)
     intents = {
+        "create": ["add", "create", "new", "register"],
+        "delete": ["delete", "remove", "deactivate"],
+        "edit": ["edit", "modify", "change", "update field"],
         "assign": ["assign", "assignment", "allocate", "give"],
         "show_roster": ["show all drones", "list all drones", "show all pilots", "list all pilots",
                         "all drones", "all pilots", "show drones", "list drones", 
@@ -292,36 +415,35 @@ def parse_intent(user_input):
         "show_non_working": ["not working", "not available", "unavailable", "in maintenance", 
                              "broken", "down", "out of service", "offline"],
         "recommend": ["recommend", "replacement", "who can", "suggest"],
-        "update_status": ["update", "set status", "mark as", "change status"],
+        "update_status": ["update status", "set status", "mark as", "change status"],
         "check_status": ["status of", "check status", "is available"],
         "find_info": ["find", "show", "get", "details", "info", "where is", "who is"]
     }
     
-    # Detect Intent - check most specific patterns first
     detected_intent = None
     
-    # Check for specific multi-word patterns first (most specific to least specific)
-    # Priority 1: "not working" phrases (highest priority)
-    if any(k in user_input_lower for k in ["not working", "not available", "broken", "down", "offline", "unavailable"]):
+    # Priority matching
+    if any(k in user_input_lower for k in ["delete", "remove"]):
+        detected_intent = "delete"
+    elif any(k in user_input_lower for k in ["edit", "modify", "change field", "update field"]):
+        detected_intent = "edit"
+    elif any(k in user_input_lower for k in ["add", "create", "new", "register"]):
+        detected_intent = "create"
+    elif any(k in user_input_lower for k in ["not working", "not available", "broken", "down", "offline", "unavailable"]):
         detected_intent = "show_non_working"
-    # Priority 2: Assignment
     elif any(k in user_input_lower for k in ["assign", "assignment", "allocate"]):
         detected_intent = "assign"
-    # Priority 3: Show available
     elif any(k in user_input_lower for k in ["show available", "list available"]):
         detected_intent = "show_available"
-    # Priority 4: Show all/roster
     elif any(k in user_input_lower for k in ["show all drones", "list all drones", "all drones", "show drones", "list drones"]):
         detected_intent = "show_roster"
     elif any(k in user_input_lower for k in ["show all pilots", "list all pilots", "all pilots", "show pilots", "list pilots"]):
         detected_intent = "show_roster"
-    # Priority 5: Missions
     elif any(k in user_input_lower for k in ["show missions", "list missions", "active missions", "all missions"]):
         detected_intent = "show_missions"
     else:
-        # Fall back to general matching for other intents
         for intent, keywords in intents.items():
-            if intent not in ["assign", "show_roster", "show_missions", "show_available", "show_non_working"]:
+            if intent not in ["create", "delete", "edit", "assign", "show_roster", "show_missions", "show_available", "show_non_working"]:
                 if any(k in user_input_lower for k in keywords):
                     detected_intent = intent
                     break
@@ -356,7 +478,7 @@ def get_safe_columns(df, desired_cols):
 
 def main():
     st.title("🚁 Skylark Conversational Ops Agent")
-    st.caption("🤖 AI-Powered Operations Assistant | Privacy Mode: On")
+    st.caption("🤖 AI-Powered Operations Assistant with CRUD | Privacy Mode: On")
     
     # Sidebar
     st.sidebar.header("System Status")
@@ -377,7 +499,7 @@ def main():
         tab1, tab2, tab3 = st.tabs(["💬 Ops Console", "📊 Roster & Fleet", "⚠️ Conflicts"])
         
         with tab1:
-            st.info("💡 **Ask me anything!** Try: 'Assign pilot to mission', 'Show available drones', 'Find all not working', 'Status of P001'")
+            st.info("💡 **Try CRUD operations!** Examples:\n- 'Add new pilot'\n- 'Delete drone D005'\n- 'Edit pilot P001'\n- 'Assign pilot to mission'\n- 'Show available drones'")
             
             if "messages" not in st.session_state:
                 st.session_state.messages = []
@@ -391,17 +513,156 @@ def main():
                 with st.chat_message("user"):
                     st.markdown(prompt)
 
-                # Get conversation context
                 ctx = agent.context.get_context()
                 response = ""
                 
-                # Check if we're in the middle of a conversation flow
+                # Handle conversation flows
                 if agent.context.is_awaiting():
                     current_action = ctx['current_action']
                     temp_data = ctx['temp_data']
                     
-                    # HANDLE ASSIGNMENT FLOW
-                    if current_action == 'awaiting_assignment_type':
+                    # ========== CREATE FLOWS ==========
+                    if current_action == 'awaiting_create_type':
+                        if 'pilot' in prompt.lower():
+                            agent.context.set_awaiting('awaiting_pilot_details')
+                            response = "📝 **Let's add a new pilot!**\n\nPlease provide:\n"
+                            response += "- Name\n- Location\n- Skills (comma-separated)\n- Available From (YYYY-MM-DD)\n\n"
+                            response += "Example: 'John Doe, Mumbai, Mapping,Inspection, 2024-01-15'"
+                        elif 'drone' in prompt.lower():
+                            agent.context.set_awaiting('awaiting_drone_details')
+                            response = "📝 **Let's add a new drone!**\n\nPlease provide:\n"
+                            response += "- Model\n- Location\n- Flight Hours\n- Last Maintenance (YYYY-MM-DD)\n\n"
+                            response += "Example: 'DJI Phantom 5, Delhi, 120, 2024-01-10'"
+                        elif 'mission' in prompt.lower():
+                            agent.context.set_awaiting('awaiting_mission_details')
+                            response = "📝 **Let's create a new mission!**\n\nPlease provide:\n"
+                            response += "- Project Name\n- Location\n- Start Date (YYYY-MM-DD)\n- End Date (YYYY-MM-DD)\n- Required Skills (comma-separated)\n\n"
+                            response += "Example: 'Pipeline Survey, Bangalore, 2024-02-01, 2024-02-15, Mapping,Thermal'"
+                        else:
+                            response = "What would you like to add? **Pilot**, **Drone**, or **Mission**?"
+                    
+                    elif current_action == 'awaiting_pilot_details':
+                        parts = [p.strip() for p in prompt.split(',')]
+                        if len(parts) >= 4:
+                            pilot_data = {
+                                'name': parts[0],
+                                'location': parts[1],
+                                'skills': parts[2],
+                                'available_from': parts[3],
+                                'status': 'Available',
+                                'current_assignment': '–'
+                            }
+                            result = agent.add_pilot(pilot_data, pilots_ws)
+                            if result.startswith('P'):
+                                response = f"✅ **Pilot Added Successfully!**\n\nID: {result}\nName: {parts[0]}\nLocation: {parts[1]}"
+                                st.cache_data.clear()
+                            else:
+                                response = f"❌ Failed to add pilot: {result}"
+                        else:
+                            response = "⚠️ Missing information. Please provide: Name, Location, Skills, Available From"
+                        agent.context.clear()
+                    
+                    elif current_action == 'awaiting_drone_details':
+                        parts = [p.strip() for p in prompt.split(',')]
+                        if len(parts) >= 4:
+                            drone_data = {
+                                'model': parts[0],
+                                'location': parts[1],
+                                'flight_hours': parts[2],
+                                'last_maintenance': parts[3],
+                                'status': 'Available',
+                                'current_assignment': '–'
+                            }
+                            result = agent.add_drone(drone_data, drones_ws)
+                            if result.startswith('D'):
+                                response = f"✅ **Drone Added Successfully!**\n\nID: {result}\nModel: {parts[0]}\nLocation: {parts[1]}"
+                                st.cache_data.clear()
+                            else:
+                                response = f"❌ Failed to add drone: {result}"
+                        else:
+                            response = "⚠️ Missing information. Please provide: Model, Location, Flight Hours, Last Maintenance"
+                        agent.context.clear()
+                    
+                    elif current_action == 'awaiting_mission_details':
+                        parts = [p.strip() for p in prompt.split(',')]
+                        if len(parts) >= 5:
+                            mission_data = {
+                                'project_name': parts[0],
+                                'location': parts[1],
+                                'start_date': parts[2],
+                                'end_date': parts[3],
+                                'required_skills': parts[4],
+                                'status': 'Active',
+                                'assigned_pilot': '–',
+                                'assigned_drone': '–'
+                            }
+                            result = agent.add_mission(mission_data, missions_ws)
+                            if result.startswith('PRJ'):
+                                response = f"✅ **Mission Created Successfully!**\n\nID: {result}\nName: {parts[0]}\nLocation: {parts[1]}"
+                                st.cache_data.clear()
+                            else:
+                                response = f"❌ Failed to create mission: {result}"
+                        else:
+                            response = "⚠️ Missing information. Please provide: Name, Location, Start Date, End Date, Required Skills"
+                        agent.context.clear()
+                    
+                    # ========== DELETE FLOWS ==========
+                    elif current_action == 'awaiting_delete_confirmation':
+                        entity_id = temp_data['entity_id']
+                        entity_type = temp_data['entity_type']
+                        
+                        if 'yes' in prompt.lower() or 'confirm' in prompt.lower():
+                            if entity_type == 'pilot':
+                                result = agent.delete_pilot(entity_id, pilots_ws)
+                                target = "Pilot"
+                            elif entity_type == 'drone':
+                                result = agent.delete_drone(entity_id, drones_ws)
+                                target = "Drone"
+                            elif entity_type == 'mission':
+                                result = agent.delete_mission(entity_id, missions_ws)
+                                target = "Mission"
+                            
+                            if result is True:
+                                response = f"✅ **{target} {entity_id} has been deleted.**"
+                                st.cache_data.clear()
+                            else:
+                                response = f"❌ Delete failed: {result}"
+                        else:
+                            response = "❌ Delete cancelled."
+                        agent.context.clear()
+                    
+                    # ========== EDIT FLOWS ==========
+                    elif current_action == 'awaiting_field_to_edit':
+                        field_name = prompt.strip().lower()
+                        temp_data['field_name'] = field_name
+                        agent.context.set_awaiting('awaiting_new_value', temp_data)
+                        response = f"What should the new value for **{field_name}** be?"
+                    
+                    elif current_action == 'awaiting_new_value':
+                        entity_id = temp_data['entity_id']
+                        entity_type = temp_data['entity_type']
+                        field_name = temp_data['field_name']
+                        new_value = prompt.strip()
+                        
+                        if entity_type == 'pilot':
+                            result = agent.update_pilot_field(entity_id, field_name, new_value, pilots_ws)
+                            target = "Pilot"
+                        elif entity_type == 'drone':
+                            result = agent.update_drone_field(entity_id, field_name, new_value, drones_ws)
+                            target = "Drone"
+                        elif entity_type == 'mission':
+                            result = agent.update_mission_field(entity_id, field_name, new_value, missions_ws)
+                            target = "Mission"
+                        
+                        if result is True:
+                            response = f"✅ **Updated {target} {entity_id}**\n{field_name} = {new_value}"
+                            st.cache_data.clear()
+                        else:
+                            response = f"❌ Update failed: {result}"
+                        agent.context.clear()
+                    
+                    # ========== ASSIGNMENT FLOWS ==========
+                    elif current_action == 'awaiting_assignment_type':
                         if 'pilot' in prompt.lower():
                             agent.context.set_awaiting('awaiting_mission_for_pilot_assignment')
                             response = "📋 **Which mission should I assign the pilot to?**\n\nActive missions:\n\n"
@@ -427,13 +688,11 @@ def main():
                             response = "I didn't catch that. Are you assigning a **pilot** or a **drone**?"
                     
                     elif current_action == 'awaiting_mission_for_pilot_assignment':
-                        # Extract mission ID
                         _, mission_id, _, _ = parse_intent(prompt)
                         if mission_id:
                             temp_data['mission_id'] = mission_id
                             agent.context.set_awaiting('awaiting_pilot_selection', temp_data)
                             
-                            # Show available pilots for this mission
                             recs = agent.recommend_replacement(mission_id)
                             if not recs.empty:
                                 response = f"✅ **Available pilots for {mission_id}:**\n\n"
@@ -467,7 +726,6 @@ def main():
                             temp_data['mission_id'] = mission_id
                             agent.context.set_awaiting('awaiting_drone_selection', temp_data)
                             
-                            # Show available drones
                             available_drones = drones_df[drones_df['status'] == 'Available']
                             if not available_drones.empty:
                                 response = f"✅ **Available drones:**\n\n"
@@ -500,7 +758,7 @@ def main():
                             response = "I need a valid Drone ID (e.g., D001). Which drone should I assign?"
                 
                 else:
-                    # NEW CONVERSATION - Parse Intent
+                    # NEW CONVERSATION
                     intent, entity_id, entity_type, clean_text = parse_intent(prompt)
                     
                     # Smart name lookup
@@ -520,8 +778,49 @@ def main():
 
                     # ============ INTENT HANDLERS ============
                     
-                    # ASSIGNMENT WORKFLOW
-                    if intent == "assign":
+                    # CREATE
+                    if intent == "create":
+                        agent.context.set_awaiting('awaiting_create_type')
+                        response = "➕ **What would you like to add?**\n- Pilot\n- Drone\n- Mission"
+                    
+                    # DELETE
+                    elif intent == "delete":
+                        if entity_id:
+                            agent.context.set_awaiting('awaiting_delete_confirmation', {
+                                'entity_id': entity_id,
+                                'entity_type': entity_type
+                            })
+                            response = f"⚠️ **Are you sure you want to delete {entity_type} {entity_id}?**\n\nType 'yes' to confirm or 'no' to cancel."
+                        else:
+                            response = "What would you like to delete? Please specify an ID (e.g., 'Delete P001', 'Remove D003')"
+                    
+                    # EDIT
+                    elif intent == "edit":
+                        if entity_id:
+                            # Show current info
+                            if entity_type == 'pilot':
+                                info = agent.get_pilot_info(entity_id)
+                            elif entity_type == 'drone':
+                                info = agent.get_drone_info(entity_id)
+                            elif entity_type == 'mission':
+                                info = agent.get_mission_info(entity_id)
+                            
+                            if info:
+                                response = f"✏️ **Editing {entity_type.title()} {entity_id}**\n\nCurrent values:\n"
+                                for key, value in info.items():
+                                    response += f"- {key}: {value}\n"
+                                response += "\n**Which field would you like to edit?**"
+                                agent.context.set_awaiting('awaiting_field_to_edit', {
+                                    'entity_id': entity_id,
+                                    'entity_type': entity_type
+                                })
+                            else:
+                                response = f"❌ {entity_type.title()} {entity_id} not found."
+                        else:
+                            response = "What would you like to edit? Please specify an ID (e.g., 'Edit P001', 'Modify D003')"
+                    
+                    # ASSIGNMENT
+                    elif intent == "assign":
                         agent.context.set_awaiting('awaiting_assignment_type')
                         response = "📝 **Let's set up an assignment.**\n\nWhat would you like to assign?\n- Pilot to mission\n- Drone to mission"
                     
@@ -550,7 +849,6 @@ def main():
                             else:
                                 response = "❌ No pilots are currently available."
                         else:
-                            # Show both
                             resources = agent.get_available_resources('all')
                             response = "✅ **Available Resources:**\n\n"
                             response += f"**Pilots ({len(resources['pilots'])} available):**\n"
@@ -601,7 +899,6 @@ def main():
                             else:
                                 response = "✅ All pilots are available!"
                         else:
-                            # Show both
                             resources = agent.get_non_working_resources('all')
                             response = "🔴 **Not Working / Unavailable:**\n\n"
                             if not resources['pilots'].empty:
@@ -743,13 +1040,16 @@ def main():
                                     response += f"- {status}: {count}\n"
                     
                     else:
-                        response = "I can help you with:\n"
-                        response += "- 📝 **Assign** pilot/drone to mission\n"
-                        response += "- 🔍 **Find** status of any resource\n"
-                        response += "- ✅ **Show available** pilots/drones\n"
-                        response += "- 🔴 **Show not working** resources\n"
-                        response += "- ✏️ **Update** status\n"
-                        response += "- 🎯 **Recommend** pilots for missions\n\n"
+                        response = "🤖 **I can help you with:**\n\n"
+                        response += "**CRUD Operations:**\n"
+                        response += "- ➕ **Create**: Add new pilot/drone/mission\n"
+                        response += "- 📖 **Read**: Find status, show rosters, list available\n"
+                        response += "- ✏️ **Update**: Edit fields, change status, assign resources\n"
+                        response += "- 🗑️ **Delete**: Remove pilot/drone/mission\n\n"
+                        response += "**Quick Commands:**\n"
+                        response += "- 'Add new pilot' | 'Delete D005' | 'Edit P001'\n"
+                        response += "- 'Show available drones' | 'Assign pilot to mission'\n"
+                        response += "- 'Status of PRJ001' | 'Recommend for PRJ002'\n\n"
                         response += "What would you like to do?"
 
                 # Display response
