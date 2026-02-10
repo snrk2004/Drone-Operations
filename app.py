@@ -113,26 +113,39 @@ class OpsAgent:
                         })
 
         return conflicts
-
-    def recommend_replacement(self, project_id):
-        # Urgent Reassignment Logic
-        mission = self.missions[self.missions['project_id'] == project_id].iloc[0]
-        req_skills = [x.strip() for x in mission['required_skills'].split(',')]
-        location = mission['location']
-        
-        # Filter: Available + Matches Location + Has Skills
-        candidates = self.pilots[
-            (self.pilots['status'] == 'Available') & 
-            (self.pilots['location'] == location)
-        ].copy()
-        
-        candidates['score'] = candidates['skills'].apply(
-            lambda x: sum(1 for s in req_skills if s in x)
-        )
-        
-        # Sort by best skill match
-        best_matches = candidates.sort_values(by='score', ascending=False)
-        return best_matches[['name', 'pilot_id', 'skills', 'location']]
+        def recommend_replacement(self, project_id):
+            # 1. CLEANUP: Force uppercase and strip spaces to match CSV format
+            project_id = str(project_id).strip().upper()
+            
+            # 2. SEARCH: Filter for the project
+            mission_rows = self.missions[self.missions['project_id'] == project_id]
+            
+            # 3. SAFETY CHECK: If project doesn't exist, return empty DataFrame
+            if mission_rows.empty:
+                return pd.DataFrame() # Return empty if ID is wrong
+                
+            # 4. LOGIC: Proceed only if mission is found
+            mission = mission_rows.iloc[0]
+            req_skills = [x.strip() for x in mission['required_skills'].split(',')]
+            location = mission['location']
+            
+            # Filter: Available + Matches Location
+            candidates = self.pilots[
+                (self.pilots['status'] == 'Available') & 
+                (self.pilots['location'] == location)
+            ].copy()
+            
+            if candidates.empty:
+                return pd.DataFrame()
+                
+            # Score candidates
+            candidates['score'] = candidates['skills'].apply(
+                lambda x: sum(1 for s in req_skills if s in x)
+            )
+            
+            # Sort and return
+            best_matches = candidates.sort_values(by='score', ascending=False)
+            return best_matches[['name', 'pilot_id', 'skills', 'location']]
 
     def update_pilot_status(self, pilot_id, new_status, worksheet):
         try:
@@ -312,5 +325,6 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
 
