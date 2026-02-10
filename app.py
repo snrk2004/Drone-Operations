@@ -157,6 +157,16 @@ class OpsAgent:
         if not mission_data.empty:
             return mission_data.iloc[0].to_dict()
         return None
+    
+    def get_non_working_drones(self):
+        """Get all drones that are not in Available status"""
+        non_working = self.drones[self.drones['status'] != 'Available']
+        return non_working
+    
+    def get_non_working_pilots(self):
+        """Get all pilots that are not in Available status"""
+        non_working = self.pilots[self.pilots['status'] != 'Available']
+        return non_working
 
     def update_pilot_status(self, pilot_id, new_status, worksheet):
         """Update pilot status in Google Sheets"""
@@ -206,7 +216,9 @@ def parse_intent(user_input):
         "update_status": ["update", "set status", "mark as", "change status"],
         "check_status": ["status of", "check status", "is available"],
         "show_roster": ["show pilots", "list pilots", "roster", "show drones", "list drones"],
-        "show_missions": ["show missions", "list missions", "projects", "show projects"]
+        "show_missions": ["show missions", "list missions", "projects", "show projects"],
+        "show_non_working": ["not working", "not available", "unavailable", "in maintenance", 
+                             "broken", "down", "out of service", "offline"]
     }
     
     # Detect Intent
@@ -265,7 +277,7 @@ def main():
         tab1, tab2, tab3 = st.tabs(["💬 Ops Console", "📊 Roster & Fleet", "⚠️ Conflicts"])
         
         with tab1:
-            st.info("**Try:** 'Find P001', 'Status of D001', 'Show PRJ001', 'Update D002 to Maintenance', 'Recommend for PRJ001'")
+            st.info("**Try:** 'Find P001', 'Status of D001', 'Show PRJ001', 'Update D002 to Maintenance', 'Recommend for PRJ001', 'Find all drones not working'")
             
             if "messages" not in st.session_state:
                 st.session_state.messages = []
@@ -409,6 +421,43 @@ def main():
                 elif intent == "show_missions":
                     active_missions = missions_df[missions_df['status'] == 'Active']
                     response = f"**Active Missions:**\n\n{active_missions[['project_id', 'project_name', 'location', 'status']].to_markdown(index=False)}"
+                
+                # SHOW NON-WORKING RESOURCES
+                elif intent == "show_non_working":
+                    if "drone" in clean_text:
+                        non_working = agent.get_non_working_drones()
+                        if not non_working.empty:
+                            response = f"**🔴 Drones Not Working ({len(non_working)} total):**\n\n"
+                            response += non_working[['drone_id', 'model', 'status', 'location', 'last_maintenance']].to_markdown(index=False)
+                            response += f"\n\n**Breakdown by Status:**\n"
+                            status_counts = non_working['status'].value_counts()
+                            for status, count in status_counts.items():
+                                response += f"- {status}: {count}\n"
+                        else:
+                            response = "✅ All drones are currently available and working!"
+                    elif "pilot" in clean_text:
+                        non_working = agent.get_non_working_pilots()
+                        if not non_working.empty:
+                            response = f"**🔴 Pilots Not Available ({len(non_working)} total):**\n\n"
+                            response += non_working[['pilot_id', 'name', 'status', 'location', 'available_from']].to_markdown(index=False)
+                            response += f"\n\n**Breakdown by Status:**\n"
+                            status_counts = non_working['status'].value_counts()
+                            for status, count in status_counts.items():
+                                response += f"- {status}: {count}\n"
+                        else:
+                            response = "✅ All pilots are currently available!"
+                    else:
+                        # Default to drones if not specified
+                        non_working = agent.get_non_working_drones()
+                        if not non_working.empty:
+                            response = f"**🔴 Drones Not Working ({len(non_working)} total):**\n\n"
+                            response += non_working[['drone_id', 'model', 'status', 'location', 'last_maintenance']].to_markdown(index=False)
+                            response += f"\n\n**Breakdown by Status:**\n"
+                            status_counts = non_working['status'].value_counts()
+                            for status, count in status_counts.items():
+                                response += f"- {status}: {count}\n"
+                        else:
+                            response = "✅ All drones are currently available and working!"
 
                 # Display response
                 with st.chat_message("assistant"):
