@@ -147,8 +147,52 @@ class OpsAgent:
             return str(e)
 
 # --- UI LAYOUT ---
+# ... (keep your existing imports and OpsAgent class) ...
+from thefuzz import process # Import fuzzy matching
+
+def parse_intent(user_input):
+    """
+    Local privacy-preserving intent classifier.
+    Returns: (Intent_Type, Entity_ID, Extra_Info)
+    """
+    user_input = user_input.lower()
+    
+    # Define keywords for different intents
+    intents = {
+        "find_pilot": ["find pilot", "recommend", "who can fly", "replacement", "assign"],
+        "update_status": ["update", "set status", "mark as", "change"],
+        "check_status": ["status of", "where is", "is available", "check"],
+        "show_roster": ["show pilots", "list pilots", "who is free", "roster"]
+    }
+    
+    # 1. Detect Intent using Fuzzy Matching
+    best_match = process.extractOne(user_input, intents.keys())
+    
+    # If the match score is low, try manual keyword check
+    detected_intent = None
+    if best_match[1] > 60: # Confidence threshold
+        detected_intent = best_match[0]
+    else:
+        # Fallback: simple string check
+        for intent, keywords in intents.items():
+            if any(k in user_input for k in keywords):
+                detected_intent = intent
+                break
+    
+    # 2. Extract Entities (IDs like P001, PRJ001)
+    # Simple heuristic: Look for words starting with P, D, or PRJ followed by numbers
+    words = user_input.replace("?", "").replace(".", "").split()
+    entity_id = None
+    for w in words:
+        if (w.startswith("p0") or w.startswith("d0") or w.startswith("prj")) and any(c.isdigit() for c in w):
+            entity_id = w.upper()
+            break
+            
+    return detected_intent, entity_id, user_input
+
 def main():
-    st.title("🚁 Skylark AI Operations Agent")
+    st.title("🔒 Skylark Private Ops Agent")
+    st.caption("Privacy Mode: On. Data processed locally.")
     
     # Sidebar
     st.sidebar.header("System Status")
@@ -161,19 +205,16 @@ def main():
             st.rerun()
     
     # Load Data
-    pilots_df, drones_df, missions_df, pilots_ws, _ = load_data(client)
+    pilots_df, drones_df, missions_df, pilots_ws, drones_ws = load_data(client)
     
     if pilots_df is not None:
         agent = OpsAgent(pilots_df, drones_df, missions_df)
         
-        # Tabs for different Views
-        tab1, tab2, tab3 = st.tabs(["💬 AI Assistant", "📊 Roster & Fleet", "⚠️ Conflicts"])
+        tab1, tab2, tab3 = st.tabs(["💬 Ops Console", "📊 Roster & Fleet", "⚠️ Conflicts"])
         
         with tab1:
-            st.subheader("Operations Chat")
-            st.info("Ask me to 'Find a pilot for Project A' or 'Update Pilot X to On Leave'")
+            st.info("System Ready. I can help with Roster, Assignments, and Status updates.")
             
-            # Chat History Setup
             if "messages" not in st.session_state:
                 st.session_state.messages = []
 
@@ -181,69 +222,67 @@ def main():
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-            # Chat Input Handler
-            if prompt := st.chat_input("How can I help you coordinate?"):
+            if prompt := st.chat_input("Ex: 'Find pilot for PRJ001' or 'Set P001 to On Leave'"):
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 with st.chat_message("user"):
                     st.markdown(prompt)
 
-                # --- SIMPLE NLU PARSER (Replacing complex LLM for prototype speed) ---
-                response = "I'm not sure how to handle that yet."
-                
-                # Intent: Find Replacement / Assignment
-                if "find" in prompt.lower() and "project" in prompt.lower():
-                    # Extract Project ID (Simple heuristic)
-                    words = prompt.split()
-                    proj_id = next((w for w in words if w.startswith("PRJ")), None)
-                    if proj_id:
-                        recs = agent.recommend_replacement(proj_id)
+                # --- LOCAL LOGIC ENGINE ---
+                intent, entity_id, clean_text = parse_intent(prompt)
+                response = "I didn't quite catch that. Try commands like 'Find pilot for PRJ001' or 'Update P001'."
+
+                # EXECUTE INTENT
+                if intent == "find_pilot":
+                    if entity_id:
+                        recs = agent.recommend_replacement(entity_id)
                         if not recs.empty:
-                            response = f"**Top recommendations for {proj_id}:**\n\n" + recs.to_markdown(index=False)
+                            response = f"**Top recommendations for {entity_id}:**\n\n" + recs.to_markdown(index=False)
                         else:
-                            response = f"No direct matches found for {proj_id} in the current location."
+                            response = f"No suitable pilots found locally for {entity_id}."
                     else:
-                        response = "Please specify the Project ID (e.g., PRJ001)."
+                        response = "Which project? Please mention the Project ID (e.g., PRJ001)."
 
-# Intent: Update Status (Pilot OR Drone)
-                elif "status" in prompt.lower() or "leave" in prompt.lower() or "maintenance" in prompt.lower():
-                    words = prompt.split()
-                    
-                    # Check if it's a Pilot (P00X)
-                    pilot_id = next((w for w in words if w.startswith("P0")), None)
-                    # Check if it's a Drone (D00X)
-                    drone_id = next((w for w in words if w.startswith("D0")), None)
-                    
-                    if pilot_id:
-                        status = "On Leave" if "leave" in prompt.lower() else "Available"
-                        res = agent.update_pilot_status(pilot_id, status, pilots_ws)
-                        response = f"✅ Updated Pilot {pilot_id} to '{status}'." if res is True else f"❌ Error: {res}"
-                        st.cache_data.clear()
-                    
-                    elif drone_id:
-                        status = "Maintenance" if "maintenance" in prompt.lower() else "Available"
-                        # Re-using the logic for drones (assuming similar structure)
-                        try:
-                            cell = drones_ws.find(drone_id)
-                            # Assuming status is col 4 (D) for drones based on CSV structure
-                            drones_ws.update_cell(cell.row, 4, status) 
-                            response = f"✅ Updated Drone {drone_id} to '{status}'."
+                elif intent == "update_status":
+                    if entity_id:
+                        # Infer status from text
+                        new_status = "Available"
+                        if "leave" in clean_text: new_status = "On Leave"
+                        if "mainten" in clean_text: new_status = "Maintenance"
+                        if "assign" in clean_text: new_status = "Assigned"
+                        
+                        # Route to Pilot or Drone update
+                        if entity_id.startswith("P"):
+                            res = agent.update_pilot_status(entity_id, new_status, pilots_ws)
+                            target = "Pilot"
+                        else:
+                            # Re-implement drone update logic briefly here
+                            try:
+                                cell = drones_ws.find(entity_id)
+                                drones_ws.update_cell(cell.row, 4, new_status) # Assuming col 4
+                                res = True
+                                target = "Drone"
+                            except Exception as e:
+                                res = str(e)
+
+                        if res is True:
+                            response = f"✅ Updated {target} {entity_id} to '{new_status}'."
                             st.cache_data.clear()
-                        except Exception as e:
-                            response = f"❌ Error updating drone: {e}"
+                        else:
+                            response = f"❌ Update failed: {res}"
                     else:
-                        response = "Please specify the ID (e.g., P001 or D001) to update status."
-                
-                # Intent: General Status
-                elif "available" in prompt.lower():
-                    avail = pilots_df[pilots_df['status'] == 'Available']
-                    response = f"Here are the currently available pilots:\n\n{avail[['name', 'location', 'skills']].to_markdown(index=False)}"
+                        response = "I need an ID to update. (e.g., 'Update P001')"
 
-                else:
-                    response = "I can help you:\n1. Find pilots for a project (`Find pilot for PRJ001`)\n2. Update status (`Set P001 to On Leave`)\n3. Check availability (`Who is available?`)"
+                elif intent == "show_roster" or "available" in clean_text:
+                    avail = pilots_df[pilots_df['status'] == 'Available']
+                    response = f"**Available Pilots:**\n{avail[['name', 'location', 'skills']].to_markdown(index=False)}"
+
+                # ---------------------------
 
                 with st.chat_message("assistant"):
                     st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
+
+        # ... (Keep Tab 2 and Tab 3 exactly the same) ...
 
         with tab2:
             col1, col2 = st.columns(2)
@@ -272,4 +311,5 @@ def main():
 if __name__ == "__main__":
 
     main()
+
 
