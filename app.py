@@ -249,10 +249,12 @@ def main():
                 if intent == "find_pilot":
                     if entity_id:
                         recs = agent.recommend_replacement(entity_id)
+                        
+                        # Check if result is empty
                         if not recs.empty:
                             response = f"**Top recommendations for {entity_id}:**\n\n" + recs.to_markdown(index=False)
                         else:
-                            response = f"No suitable pilots found locally for {entity_id}."
+                            response = f"❌ Could not find active project **{entity_id}** or no local pilots are available."
                     else:
                         response = "Which project? Please mention the Project ID (e.g., PRJ001)."
 
