@@ -4,6 +4,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import time
+from thefuzz import process # Import fuzzy matching
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Skylark Ops Agent", layout="wide")
@@ -148,7 +149,7 @@ class OpsAgent:
 
 # --- UI LAYOUT ---
 # ... (keep your existing imports and OpsAgent class) ...
-from thefuzz import process # Import fuzzy matching
+
 
 def parse_intent(user_input):
     """
