@@ -54,44 +54,63 @@ class OpsAgent:
     def check_conflicts(self):
         conflicts = []
         
-        # Merge missions with assigned pilots
-        # Assuming missions have a 'assigned_pilot_id' or we infer from pilot roster
-        # For this logic, let's look at the PILOT roster's 'current_assignment'
-        
-        # 1. Date/Availability Conflicts
+        # --- 1. PILOT CONFLICTS ---
         for idx, pilot in self.pilots.iterrows():
-            if pilot['status'] == 'Assigned':
-                # Find their mission details
+            if pilot['current_assignment'] and pilot['current_assignment'] != "–":
+                # Get Mission Details
                 mission = self.missions[self.missions['project_id'] == pilot['current_assignment']]
+                
                 if not mission.empty:
-                    m_end = pd.to_datetime(mission.iloc[0]['end_date'])
-                    p_avail = pd.to_datetime(pilot['available_from'])
+                    m_data = mission.iloc[0]
                     
+                    # A. Date Overlap
+                    m_end = pd.to_datetime(m_data['end_date'])
+                    p_avail = pd.to_datetime(pilot['available_from'])
                     if p_avail > m_end:
                          conflicts.append({
-                            "type": "Date Overlap",
+                            "type": "Pilot Date Overlap",
                             "entity": pilot['name'],
-                            "detail": f"Assigned to {pilot['current_assignment']} but not available until {pilot['available_from']}",
+                            "detail": f"Assigned to {pilot['current_assignment']} but unavailable until {pilot['available_from']}",
                             "severity": "High"
                         })
 
-        # 2. Skill Mismatch
-        for idx, pilot in self.pilots.iterrows():
-            if pilot['current_assignment'] and pilot['current_assignment'] != "–":
-                mission = self.missions[self.missions['project_id'] == pilot['current_assignment']]
-                if not mission.empty:
-                    req_skills = [x.strip() for x in mission.iloc[0]['required_skills'].split(',')]
+                    # B. Skill Mismatch
+                    req_skills = [x.strip() for x in m_data['required_skills'].split(',')]
                     pilot_skills = pilot['skills']
-                    
-                    missing = [skill for skill in req_skills if skill not in pilot_skills]
+                    missing = [s for s in req_skills if s not in pilot_skills]
                     if missing:
                         conflicts.append({
                             "type": "Skill Mismatch",
                             "entity": pilot['name'],
-                            "detail": f"Missing skills {missing} for project {pilot['current_assignment']}",
+                            "detail": f"Missing {missing} for {pilot['current_assignment']}",
                             "severity": "Medium"
                         })
-        
+
+        # --- 2. DRONE CONFLICTS ---
+        for idx, drone in self.drones.iterrows():
+            if drone['current_assignment'] and drone['current_assignment'] != "–":
+                # C. Maintenance Check
+                if drone['status'] == 'Maintenance':
+                    conflicts.append({
+                        "type": "Drone in Maintenance",
+                        "entity": drone['drone_id'],
+                        "detail": f"Assigned to {drone['current_assignment']} but status is Maintenance",
+                        "severity": "High"
+                    })
+                
+                # D. Location Mismatch (Drone vs Project)
+                # Find the project the drone is assigned to
+                mission = self.missions[self.missions['project_id'] == drone['current_assignment']]
+                if not mission.empty:
+                    mission_loc = mission.iloc[0]['location']
+                    if drone['location'] != mission_loc:
+                        conflicts.append({
+                            "type": "Drone Location Mismatch",
+                            "entity": drone['drone_id'],
+                            "detail": f"Drone is in {drone['location']} but Project is in {mission_loc}",
+                            "severity": "Medium"
+                        })
+
         return conflicts
 
     def recommend_replacement(self, project_id):
@@ -235,4 +254,5 @@ def main():
                 st.success("No active conflicts detected.")
 
 if __name__ == "__main__":
+
     main()
